@@ -1,0 +1,16 @@
+# Core packages
+torch>=2.0.0
+torchvision>=0.15.0
+numpy>=1.21.0
+matplotlib>=3.5.0
+scipy>=1.7.0
+
+# Progress bars and utilities
+tqdm>=4.62.0
+
+# File handling
+pathlib>=1.0.1
+
+# Optional but recommended for development
+jupyter>=1.0.0
+ipython>=7.31.0
