@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import gc
 
 os.environ['NNPACK_DISABLE'] = '1'  # Disable NNPACK
-torch.backends.nnpack.enabled = False
+
 
 from modules import ANN, Trainer
 
@@ -36,10 +36,10 @@ def main():
         # Load data with error handling
         logger.info("Loading data...")
         try:
-            train_spikes = torch.load(data_dir / 'train_spikes_gratings.pt', weights_only=True).float()
-            val_spikes = torch.load(data_dir / 'val_spikes_gratings.pt', weights_only=True).float()
-            train_images = torch.load(data_dir / 'train_images_gratings.pt', weights_only=True).float()
-            val_images = torch.load(data_dir / 'val_images_gratings.pt', weights_only=True).float()
+            train_spikes = torch.load(data_dir / 'train_spikes_gratings.pt').float()
+            val_spikes = torch.load(data_dir / 'val_spikes_gratings.pt').float()
+            train_images = torch.load(data_dir / 'train_images_gratings.pt').float()
+            val_images = torch.load(data_dir / 'val_images_gratings.pt').float()
         except FileNotFoundError as e:
             logger.error(f"Data file not found: {e}")
             return
@@ -70,12 +70,12 @@ def main():
         # Set training parameters
         torch.backends.cudnn.benchmark = True  # Enable cudnn autotuner
         batch_size = 16
-        n_epochs = 50
+        n_epochs = 5000
         
         # Set hyperparameters
         n_inputs = train_spikes.shape[0]  # number of neurons
         image_size = train_images.shape[1]  # assuming square images
-        lr = 5e-4
+        lr = 1e-4
         
         # Prepare input spikes
         spk_in = train_spikes.permute(1, 0, 2, 3)  # [batch, neurons, trials, time]
@@ -93,8 +93,10 @@ def main():
             n_epochs=n_epochs,
             device=device,
             model_save_dir=model_save_dir,
-            lr=lr,
-            batch_size=batch_size
+            lr=1e-4,
+            batch_size=batch_size,
+            patience=20,
+            tolerance=0.15
         )
         
         # Training phase
@@ -123,6 +125,30 @@ def main():
                 plt.ylabel('Loss')
                 plt.yscale('log')
                 plt.savefig(output_dir / 'training_loss.png')
+                plt.close()
+
+                # Plot example output
+                plt.figure(figsize=(15, 5))
+                
+                # Original image
+                plt.subplot(1, 3, 1)
+                plt.imshow(val_images[0].cpu(), cmap='gray')
+                plt.title('Original Image')
+                plt.axis('off')
+                
+                # Decoded image
+                plt.subplot(1, 3, 2)
+                plt.imshow(decoded_image_val[0].cpu(), cmap='gray')
+                plt.title('Decoded Image')
+                plt.axis('off')
+                
+                # Difference
+                plt.subplot(1, 3, 3)
+                plt.imshow((val_images[0] - decoded_image_val[0]).cpu(), cmap='RdBu')
+                plt.title('Difference')
+                plt.axis('off')
+                
+                plt.savefig(output_dir / 'validation_results.png')
                 plt.close()
                 
                 logger.info(f"Final validation loss: {val_loss:.6f}")
