@@ -1,4 +1,5 @@
 import torch
+import os
 import torch.nn.functional as F
 import numpy as np
 import matplotlib.pyplot as plt
@@ -9,7 +10,6 @@ from scipy.ndimage import center_of_mass
 
 from modules import ANN
 os.environ['NNPACK_DISABLE'] = '1'  # Disable NNPACK
-torch.backends.nnpack.enabled = False
 
 class ModelEvaluator:
     def __init__(self, model, val_spikes, val_images, save_dir='metrics'):
@@ -47,17 +47,22 @@ class ModelEvaluator:
         """Compute binary classification metrics"""
         pred_binary = (pred > threshold).float()
         target_binary = (target != 116.0).float()
-        
+    
         pred_flat = pred_binary.flatten().cpu().numpy()
         target_flat = target_binary.flatten().cpu().numpy()
         pred_prob_flat = pred.flatten().cpu().numpy()
-        
+    
         precision, recall, f1, _ = precision_recall_fscore_support(
             target_flat, pred_flat, average='binary'
         )
         accuracy = accuracy_score(target_flat, pred_flat)
-        auc = roc_auc_score(target_flat, pred_prob_flat)
-        
+    
+        # Check for single-class targets
+        if len(np.unique(target_flat)) > 1:
+            auc = roc_auc_score(target_flat, pred_prob_flat)
+        else:
+            auc = None  # AUC not defined for single-class targets
+    
         return {
             'accuracy': accuracy,
             'precision': precision,
@@ -117,6 +122,11 @@ class ModelEvaluator:
                     plt.savefig(self.samples_dir / f'sample_{i}.png')
                     plt.close()
             
+            # Calculate MSE-based metrics
+            mse_values = np.array(metrics['mse_values'])
+            mse_threshold = np.mean(mse_values) + np.std(mse_values)
+            mse_accuracy = np.mean(mse_values < mse_threshold)
+            
             # Generate distribution plots
             
             # 1. Position Errors
@@ -158,17 +168,21 @@ class ModelEvaluator:
                 },
                 'mse': {
                     'mean': np.mean(metrics['mse_values']),
-                    'std': np.std(metrics['mse_values'])
+                    'std': np.std(metrics['mse_values']),
+                    'min': np.min(metrics['mse_values']),
+                    'max': np.max(metrics['mse_values']),
+                    'range': np.max(metrics['mse_values']) - np.min(metrics['mse_values']),
+                    'accuracy': mse_accuracy
                 },
                 'classification': {
                     'accuracy': np.mean([m['accuracy'] for m in metrics['classification_metrics']]),
                     'f1': np.mean([m['f1'] for m in metrics['classification_metrics']]),
-                    'auc': np.mean([m['auc'] for m in metrics['classification_metrics']])
+                    'auc': np.mean([m['auc'] for m in metrics['classification_metrics'] if m['auc'] is not None])
                 },
                 'center_classification': {
                     'accuracy': np.mean([m['accuracy'] for m in metrics['center_classification_metrics']]),
                     'f1': np.mean([m['f1'] for m in metrics['center_classification_metrics']]),
-                    'auc': np.mean([m['auc'] for m in metrics['center_classification_metrics']])
+                    'auc': np.mean([m['auc'] for m in metrics['center_classification_metrics'] if m['auc'] is not None])
                 }
             }
             
@@ -177,28 +191,33 @@ class ModelEvaluator:
                 for category, values in summary.items():
                     f.write(f"\n{category.upper()}:\n")
                     for metric, value in values.items():
-                        f.write(f"{metric}: {value:.4f}\n")
-            
-            # Save detailed metrics
-            np.save(self.metrics_dir / 'position_errors.npy', np.array(metrics['position_errors']))
-            np.save(self.metrics_dir / 'center_activations.npy', np.array(metrics['center_activations']))
-            np.save(self.metrics_dir / 'mse_values.npy', np.array(metrics['mse_values']))
+                        if isinstance(value, float):
+                            f.write(f"{metric}: {value:.4f}\n")
+                        else:
+                            f.write(f"{metric}: {value}\n")
+                
+                # Add MSE distribution information
+                f.write("\nMSE DISTRIBUTION PERCENTILES:\n")
+                percentiles = [25, 50, 75, 90, 95, 99]
+                for p in percentiles:
+                    value = np.percentile(mse_values, p)
+                    f.write(f"{p}th percentile: {value:.4f}\n")
             
             return summary, metrics
-        
+
 def load_model_and_data():
     # Set up paths
     model_path = Path('model') / 'best_model.pt'
     data_path = Path('data')
     
-    #Load validation data
-    val_spikes = torch.load(data_path / 'val_spikes_gratings.pt', weights_only=True).float()
-    val_images = torch.load(data_path / 'val_images_gratings.pt', weights_only=True).float()
+    # Load validation data
+    val_spikes = torch.load(data_path / 'val_spikes_gratings.pt').float()
+    val_images = torch.load(data_path / 'val_images_gratings.pt').float()
     
     val_spikes = val_spikes.permute(1, 0, 2, 3)
 
     # Initialize model with same parameters as training
-    model = ANN(n_inputs=26, image_size=320)  # Adjust parameters if needed
+    model = ANN(n_inputs=26, image_size=320)
     
     # Load model state dict
     state_dict = torch.load(model_path)
@@ -207,14 +226,18 @@ def load_model_and_data():
     
     return model, val_spikes, val_images
 
-# Load everything and run evaluation
-model, val_spikes, val_images = load_model_and_data()
-evaluator = ModelEvaluator(model, val_spikes, val_images)
-summary, metrics = evaluator.evaluate()
+if __name__ == "__main__":
+    # Load everything and run evaluation
+    model, val_spikes, val_images = load_model_and_data()
+    evaluator = ModelEvaluator(model, val_spikes, val_images)
+    summary, metrics = evaluator.evaluate()
 
-# Print summary
-print("\nEvaluation Summary:")
-for category, values in summary.items():
-    print(f"\n{category.upper()}:")
-    for metric, value in values.items():
-        print(f"{metric}: {value:.4f}")
+    # Print summary
+    print("\nEvaluation Summary:")
+    for category, values in summary.items():
+        print(f"\n{category.upper()}:")
+        for metric, value in values.items():
+            if isinstance(value, float):
+                print(f"{metric}: {value:.4f}")
+            else:
+                print(f"{metric}: {value}")
