@@ -1,0 +1,34 @@
+
+POSITION_ERROR:
+mean: 1.7733
+std: 0.7773
+
+CENTER_ACTIVATION:
+mean: 0.3707
+std: 0.0036
+
+MSE:
+mean: 14240.8224
+std: 1001.0087
+min: 13406.3252
+max: 16029.5898
+range: 2623.2646
+accuracy: 0.7317
+
+CLASSIFICATION:
+accuracy: 0.7679
+f1: 0.2755
+auc: 0.6423
+
+CENTER_CLASSIFICATION:
+accuracy: 0.4654
+f1: 0.3991
+auc: 0.6497
+
+MSE DISTRIBUTION PERCENTILES:
+25th percentile: 13512.7051
+50th percentile: 13578.3711
+75th percentile: 15466.2617
+90th percentile: 15894.4121
+95th percentile: 15985.4863
+99th percentile: 16011.9539
